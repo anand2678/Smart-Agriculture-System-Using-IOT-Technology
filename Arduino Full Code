@@ -1,0 +1,234 @@
+
+	
+ //Sensors Data
+
+  const int sensor_pin = A1;/* Soil moisture sensor O/P pin */
+
+int pinTemp = A2; /*Temperature Sensor o/p pin */
+
+const int PIR_SENSOR_OUTPUT_PIN = 4;  /* PIR sensor O/P pin */
+int warm_up;  // PIr Sensor
+
+int IRSensor = 9; // connect IR sensor module to Arduino pin D9
+int Buzzer = 13; // connect BUZZER to Arduino pin 13
+
+const int ledPin = 10; //LDR Sensor
+
+const int ldrPin = A0;  //LDR Sensor
+
+//Gas Sensor
+
+int GasBuzzer= 8;
+int smokeA0 = A3;
+// Your threshold value
+int sensorThres = 200;
+
+#include <SoftwareSerial.h>
+
+SoftwareSerial SIM7670Serial(2, 3); // TX, RX
+
+void sendATCommand(const char* cmd, const char* expectedResponse, unsigned long timeout) {
+  SIM7670Serial.println(cmd);
+  String response = "";
+  response.reserve(50);
+  unsigned long startTime = millis();
+  bool responseOK = false;
+
+  while (millis() - startTime < timeout) {
+    while (SIM7670Serial.available() > 0) {
+      char c = SIM7670Serial.read();
+      response += c;
+    }
+    if (response.indexOf(expectedResponse) != -1) {
+      responseOK = true;
+      break; // found it
+    }
+  }
+  Serial.println(response);
+
+  if (responseOK)
+    Serial.println("Response OK");
+  else
+    Serial.println("Timeout without expected Response");
+
+ 
+
+}
+
+void setup() {
+  Serial.begin(115200);
+  SIM7670Serial.begin(115200);
+  sendATCommand("AT+CGMM", "OK", 1000); // check communication
+  sendATCommand("AT+CMGF=1", "OK", 1000); // set SMS format to text
+
+  //Sensors Data
+
+      pinMode(PIR_SENSOR_OUTPUT_PIN, INPUT);//pir Sensor
+   delay(20000);  /* Power On Warm Up Delay of PIR Sensor*/
+  
+  pinMode(IRSensor, INPUT); // IR Sensor pin INPUT
+  pinMode(Buzzer, OUTPUT); // Buzzer Pin Output
+  
+  pinMode(ledPin, OUTPUT); //LDR Sensor
+
+pinMode(ldrPin, INPUT);  //LDR Sensor
+
+ //Gas sensor 
+ pinMode(Buzzer,OUTPUT);
+  pinMode(smokeA0, INPUT);
+
+}
+
+void sendSMS(String number, String message) {
+  String cmd = "AT+CMGS=\"" + number + "\"\r\n";
+  SIM7670Serial.print(cmd);
+  delay(100);
+  SIM7670Serial.println(message);
+  delay(100);
+  SIM7670Serial.write(0x1A); // send ctrl-z
+  delay(100);
+}
+void loop() {
+
+  //Soil Moisture Code
+
+ float moisture_percentage;
+  int sensor_analog;
+  sensor_analog = analogRead(sensor_pin);
+  moisture_percentage = ( 100 - ( (sensor_analog/1023.00) * 100 ) );
+  Serial.print("Moisture Percentage = ");
+  Serial.print(moisture_percentage);
+  Serial.print("%\n\n");
+  delay(1000);
+
+ if(moisture_percentage<=40){
+
+   sendSMS("9354757393", "Turn ON the Motor,MOisture level is less than 40%");
+   delay(1000);
+ }
+ if(moisture_percentage>=80){
+   sendSMS("9354757393", "Turn OFF the Motor,MOisture level is Greater than 80%");
+   delay(1000);
+ }
+
+//Temperature Sensor code
+
+   int temp = analogRead(pinTemp);    //Read the analog pin
+  temp = temp * 0.48828125;   // convert output (mv) to readable Celsius
+  Serial.print("Temperature: ");
+  Serial.print(temp);
+  Serial.println("C");  //print the temperature status
+  delay(1000); 
+
+if(temp>=200){
+   sendSMS("9354757393", "Temparature of Farm is more than 200 degree celsius");
+   delay(1000);
+}
+if(temp<=50){
+   sendSMS("9354757393", "Temparature of Farm is less than 50 degree celsius");
+   delay(1000);
+}
+
+//PIR Sensor Code
+
+  int sensor_output;
+  sensor_output = digitalRead(PIR_SENSOR_OUTPUT_PIN);
+  if( sensor_output == LOW )
+  {
+    if( warm_up == 1 )
+     {
+      Serial.print("Warming Up\n\n");
+      warm_up = 0;
+      delay(2000);
+    }
+    Serial.print("No object in sight\n\n");
+    delay(1000);
+  }
+  else
+  {
+    Serial.print("Object detected\n\n");    
+    warm_up = 1;
+    delay(1000);
+
+ sendSMS("9354757393", "Object detected by PIR Sensor in Your Farm");
+   delay(1000);
+
+  }  
+
+  //IR SEnsor Code
+
+    int sensorStatus = digitalRead(IRSensor); // Set the GPIO as Input
+  if (sensorStatus == 1) // Check if the pin high or not
+  {
+    // if the pin is high turn off the onboard Led
+    digitalWrite(Buzzer, HIGH); // LED LOW
+    Serial.println("Motion Detected!"); // print Motion Detected! on the serial monitor window
+
+sendSMS("9354757393", "Person or Object Detected in the farm from IR Sensor ");
+   delay(1000);
+
+  }
+  else  {
+    //else turn on the onboard LED
+    digitalWrite(Buzzer, LOW); // LED High
+    Serial.println("Motion Ended!"); // print Motion Ended! on the serial monitor window
+  }
+
+  //LDR Sensor Code
+
+  int ldrStatus = analogRead(ldrPin);
+
+if (ldrStatus <=300) { 
+
+analogWrite(ledPin, 200);
+
+Serial.print("LDR is DARK, LED is ON ");
+Serial.println(ldrStatus);
+
+sendSMS("9354757393", "Light is ON Automatically in the Farm");
+   delay(1000);
+
+
+}
+
+else {
+
+analogWrite(ledPin, 50);
+
+Serial.print("LED OFF ");
+Serial.println(ldrStatus);
+
+sendSMS("9354757393", "Light is OFF Automatically in the Farm ");
+   delay(1000);
+
+}
+
+ //GAs Sensor Code
+  
+ int analogSensor = analogRead(smokeA0);
+
+  Serial.print("Gas Value: ");
+  Serial.println(analogSensor);
+  // Checks if it has reached the threshold value
+  if (analogSensor > sensorThres)
+  {
+  tone(GasBuzzer, 1000, 200);
+
+sendSMS("9354757393", "Gas Or Fire detected in the farm store room");
+   delay(1000);
+
+  }
+  else
+  {
+noTone(GasBuzzer);
+  }
+delay(100);
+
+
+
+
+
+   
+
+   
+}
